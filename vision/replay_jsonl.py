@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterator
 
 from common.types import Detection, DetectionFrame
+from vision.tracker import SimpleTracker
 
 
 # 兼容旧版 COCO 名称
@@ -20,6 +21,13 @@ ALLOWED_CLASSES = {
     "phone",
     "book",
     "bottle",
+}
+
+CLASS_CONFIDENCE_THRESHOLDS = {
+    "person": 0.30,
+    "phone": 0.20,
+    "book": 0.20,
+    "bottle": 0.25,
 }
 
 
@@ -45,6 +53,16 @@ def message_to_detection_frame(
         if class_name not in ALLOWED_CLASSES:
             continue
 
+        confidence = float(item["confidence"])
+
+        threshold = CLASS_CONFIDENCE_THRESHOLDS.get(
+            class_name,
+            0.20,
+        )
+
+        if confidence < threshold:
+            continue
+
         bbox = item["bbox_xyxy"]
 
         if len(bbox) != 4:
@@ -55,7 +73,7 @@ def message_to_detection_frame(
         detection = Detection(
             class_id=int(item["class_id"]),
             class_name=class_name,
-            confidence=float(item["confidence"]),
+            confidence=confidence,
             bbox_xyxy=(
                 float(bbox[0]),
                 float(bbox[1]),
@@ -123,25 +141,32 @@ def main():
         "atlas_detections.jsonl"
     )
 
-    frame_count = 0
+    tracker = SimpleTracker(
+        iou_threshold=0.25,
+        center_distance_threshold=0.10,
+        max_missed_frames=10,
+    )
 
     for frame in read_jsonl(path):
-        frame_count += 1
+        tracked_frame = tracker.update(
+            frame
+        )
 
-        names = [
-            detection.class_name
-            for detection in frame.detections
+        tracks = [
+            (
+                obj.track_id,
+                obj.class_name,
+                obj.missed_frames,
+            )
+            for obj in tracked_frame.objects
         ]
 
         print(
             f"frame={frame.frame_id:3d} "
-            f"size={frame.image_width}x"
-            f"{frame.image_height} "
-            f"detections={names}"
+            f"detections="
+            f"{len(frame.detections):2d} "
+            f"tracks={tracks}"
         )
-
-    print()
-    print(f"Total frames: {frame_count}")
 
 
 if __name__ == "__main__":
