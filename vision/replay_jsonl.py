@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Iterator
 
 from common.types import Detection, DetectionFrame
-from vision.tracker import SimpleTracker
+from vision.pipeline import VisionPipeline
 
 
 # 兼容旧版 COCO 名称
@@ -141,14 +141,10 @@ def main():
         "atlas_detections.jsonl"
     )
 
-    tracker = SimpleTracker(
-        iou_threshold=0.25,
-        center_distance_threshold=0.10,
-        max_missed_frames=10,
-    )
+    vision = VisionPipeline()
 
     for frame in read_jsonl(path):
-        tracked_frame = tracker.update(
+        stable_frame = vision.update(
             frame
         )
 
@@ -158,7 +154,7 @@ def main():
                 obj.class_name,
                 obj.missed_frames,
             )
-            for obj in tracked_frame.objects
+            for obj in stable_frame.objects
         ]
 
         print(
