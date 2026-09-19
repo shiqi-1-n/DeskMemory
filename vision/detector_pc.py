@@ -205,6 +205,42 @@ class PCDetector:
             detections=detections,
         )
 
+def draw_detection_frame(
+    img_bgr: np.ndarray,
+    frame: DetectionFrame,
+) -> np.ndarray:
+    result = img_bgr.copy()
+
+    for detection in frame.detections:
+        x1, y1, x2, y2 = detection.bbox_xyxy
+
+        p1 = (int(x1), int(y1))
+        p2 = (int(x2), int(y2))
+
+        cv2.rectangle(
+            result,
+            p1,
+            p2,
+            (0, 255, 0),
+            3,
+        )
+
+        text = (
+            f"{detection.class_name} "
+            f"{detection.confidence:.2f}"
+        )
+
+        cv2.putText(
+            result,
+            text,
+            (int(x1), max(int(y1) - 10, 20)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 255, 0),
+            2,
+        )
+
+    return result
 
 def main():
     model_path = "vision/models/yolov5s.onnx"
@@ -212,9 +248,10 @@ def main():
     image_path = "vision/debug/test.jpg"
 
     detector = PCDetector(
-        model_path=model_path,
-        labels_path=labels_path,
-    )
+    model_path=model_path,
+    labels_path=labels_path,
+    conf_threshold=0.25,
+)
 
     img_bgr = cv2.imread(image_path)
 
@@ -245,6 +282,20 @@ def main():
             f"conf={detection.confidence:.3f} "
             f"bbox={detection.bbox_xyxy}"
         )
+    result_img = draw_detection_frame(
+        img_bgr,
+        frame,
+    )
+
+    output_path = "vision/debug/result.jpg"
+
+    cv2.imwrite(
+        output_path,
+        result_img,
+    )
+
+    print()
+    print(f"Detection image saved to: {output_path}")
 
 
 if __name__ == "__main__":
