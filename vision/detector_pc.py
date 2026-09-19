@@ -250,7 +250,7 @@ def main():
     detector = PCDetector(
     model_path=model_path,
     labels_path=labels_path,
-    conf_threshold=0.25,
+    conf_threshold=0.20,
 )
 
     img_bgr = cv2.imread(image_path)
