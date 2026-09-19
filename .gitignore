@@ -233,3 +233,6 @@ vision/debug/*.avi
 vision/debug/*.jpg
 vision/debug/*.jpeg
 vision/debug/*.png
+
+# Vision replay data
+vision/debug/*.jsonl
