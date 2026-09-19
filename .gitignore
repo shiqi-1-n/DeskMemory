@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Python cache
+__pycache__/
+*.pyc
+.venv/
+
+# Vision model files
+vision/models/*.onnx
+vision/models/*.pt
+vision/models/*.om
+
+# Vision debug media
+vision/debug/*.mp4
+vision/debug/*.avi
+vision/debug/*.jpg
+vision/debug/*.jpeg
+vision/debug/*.png
