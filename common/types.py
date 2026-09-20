@@ -36,3 +36,17 @@ class TrackedFrame:
     image_width: int
     image_height: int
     objects: List[TrackedObject] = field(default_factory=list)
+
+@dataclass(frozen=True)
+class ForgottenItem:
+    track_id: int
+    class_name: str
+    bbox_xyxy: tuple[float, float, float, float]
+    last_seen_time: float
+
+
+@dataclass(frozen=True)
+class ForgottenEvent:
+    event_id: str
+    timestamp: float
+    items: List[ForgottenItem] = field(default_factory=list)
