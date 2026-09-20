@@ -20,7 +20,7 @@ MODEL_PATH = "model/yolov5s.om"
 LABELS_PATH = "coco_names.txt"
 INPUT_SIZE = (640, 640)
 WARMUP_FRAMES = 10
-SEND_FRAMES = 100
+SEND_FRAMES = 5000
 CONFIDENCE_THRESHOLD = 0.20
 CLASS_NAME_ALIASES = {"cell_phone": "phone"}
 
