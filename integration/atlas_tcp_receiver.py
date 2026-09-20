@@ -4,25 +4,9 @@ import argparse
 import json
 import socket
 
-from common.types import Detection, DetectionFrame
 from memory.engine import DeskMemoryEngine
 from vision.pipeline import VisionPipeline
-
-
-# DeskMemory v0.1 暂时关注的类别
-ALLOWED_CLASSES = {
-    "person",
-    "phone",
-    "book",
-    "bottle",
-}
-
-
-# 防止不同检测端命名不一致
-CLASS_NAME_MAP = {
-    "cell_phone": "phone",
-    "cell phone": "phone",
-}
+from vision.replay_jsonl import message_to_detection_frame
 
 
 class StreamClock:
@@ -30,9 +14,11 @@ class StreamClock:
     使用 Atlas timestamp 驱动 C 的时序逻辑，
     但忽略明显的数据中断时间。
 
-    这样：
-    - 正常连续图像：时间正常推进
-    - TCP/Atlas 中断几秒：这几秒不计入“用户离场时间”
+    正常连续数据：
+        时间正常推进
+
+    TCP / Atlas 中断：
+        中断时间不计入用户离场时间
     """
 
     def __init__(
@@ -63,9 +49,11 @@ class StreamClock:
         if dt < 0:
             dt = 0.0
 
-        # 正常约 14 FPS，帧间隔约 0.07s。
-        # 如果突然跳了很长时间，认为是数据中断，
-        # 不把中断时间算进 FSM。
+        # Atlas 当前约 14 FPS，
+        # 正常帧间隔约 0.07 秒。
+        #
+        # 如果出现明显时间跳跃，
+        # 认为中间发生了数据中断。
         if dt > self.max_valid_gap:
 
             print(
@@ -82,76 +70,10 @@ class StreamClock:
         return self.logical_timestamp
 
 
-def json_to_detection_frame(
-    data: dict,
-    timestamp: float,
-) -> DetectionFrame:
-
-    detections: list[Detection] = []
-
-    for item in data.get(
-        "detections",
-        [],
-    ):
-
-        raw_name = str(
-            item["class_name"]
-        )
-
-        class_name = CLASS_NAME_MAP.get(
-            raw_name,
-            raw_name,
-        )
-
-        # 屏蔽 cup / mouse / knife / keyboard 等
-        # 当前 DeskMemory 不关心的类别
-        if class_name not in ALLOWED_CLASSES:
-            continue
-
-        bbox = item["bbox_xyxy"]
-
-        if len(bbox) != 4:
-            raise ValueError(
-                f"Invalid bbox_xyxy: {bbox}"
-            )
-
-        detections.append(
-            Detection(
-                class_id=int(
-                    item["class_id"]
-                ),
-                class_name=class_name,
-                confidence=float(
-                    item["confidence"]
-                ),
-                bbox_xyxy=(
-                    float(bbox[0]),
-                    float(bbox[1]),
-                    float(bbox[2]),
-                    float(bbox[3]),
-                ),
-            )
-        )
-
-    return DetectionFrame(
-        frame_id=int(
-            data["frame_id"]
-        ),
-        timestamp=timestamp,
-        image_width=int(
-            data["image_width"]
-        ),
-        image_height=int(
-            data["image_height"]
-        ),
-        detections=detections,
-    )
-
-
 def create_engine() -> DeskMemoryEngine:
 
-    # 第一轮联调为了节约等待时间，
-    # confirmed_leave_time 暂时使用 5 秒。
+    # 第一轮联调为了方便观察，
+    # confirmed_leave_time 暂时设为 5 秒。
     return DeskMemoryEngine(
         baseline_min_hits=2,
         presence_grace_time=2.0,
@@ -193,39 +115,63 @@ def process_json_line(
     if not text:
         return None
 
-    data = json.loads(
+    # ==========================================
+    # TCP JSON
+    # ==========================================
+
+    message = json.loads(
         text
     )
 
+    # ==========================================
+    # 数据中断时间保护
+    #
+    # 不修改 B 的转换函数，
+    # 只在送入它之前修正 timestamp。
+    # ==========================================
+
     raw_timestamp = float(
-        data["timestamp"]
+        message["timestamp"]
     )
 
-    logical_timestamp = (
-        clock.convert(
-            raw_timestamp
-        )
+    logical_timestamp = clock.convert(
+        raw_timestamp
+    )
+
+    message = dict(
+        message
+    )
+
+    message["timestamp"] = (
+        logical_timestamp
     )
 
     # ==========================================
-    # A JSON
-    #    ↓
+    # B 公共转换入口
+    #
+    # Atlas JSON
+    #     ↓
+    # message_to_detection_frame()
+    #     ↓
     # DetectionFrame
+    #
+    # 类别映射、MVP 类别过滤、
+    # confidence threshold 均由 B 统一负责。
     # ==========================================
 
     detection_frame = (
-        json_to_detection_frame(
-            data,
-            logical_timestamp,
+        message_to_detection_frame(
+            message
         )
     )
 
     # ==========================================
     # B
+    #
     # DetectionFrame
-    #    ↓
-    # VisionPipeline
-    #    ↓
+    #     ↓
+    # Tracking + Stability
+    #     ↓
     # TrackedFrame
     # ==========================================
 
@@ -235,10 +181,11 @@ def process_json_line(
 
     # ==========================================
     # C
+    #
     # TrackedFrame
-    #    ↓
-    # DeskMemoryEngine
-    #    ↓
+    #     ↓
+    # DeskMemory
+    #     ↓
     # ForgottenEvent
     # ==========================================
 
@@ -309,14 +256,16 @@ def run_server(
             "Protocol: UTF-8 JSON Lines"
         )
 
+        print()
         print(
             "Pipeline:"
         )
 
         print(
-            "Atlas JSON -> DetectionFrame "
-            "-> VisionPipeline "
-            "-> DeskMemoryEngine"
+            "Atlas JSON"
+            " -> message_to_detection_frame()"
+            " -> VisionPipeline"
+            " -> DeskMemoryEngine"
         )
 
         print()
@@ -333,13 +282,16 @@ def run_server(
 
             print()
             print(
-                f"[CONNECTED] {addr[0]}:{addr[1]}"
+                f"[CONNECTED] "
+                f"{addr[0]}:{addr[1]}"
             )
             print()
 
-            # 不因为新 TCP connection
-            # 自动重置 engine。
-            # 短暂断线不能等同于新会话。
+            # 注意：
+            # 新 TCP connection 不自动 reset。
+            #
+            # 因为一次短暂断线
+            # 不应该等价于新的 DeskMemory 会话。
 
             with conn:
 
@@ -370,16 +322,17 @@ def run_server(
                             )
 
                             print(
-                                "DeskMemory FSM is paused; "
-                                "this is NOT treated as user leave."
+                                "DeskMemory FSM paused. "
+                                "This is NOT treated "
+                                "as user leave."
                             )
-
                             print()
 
                             data_interrupted = True
 
-                        # 关键：
-                        # timeout 时什么都不送给 Vision/C
+                        # timeout：
+                        # 不生成空 DetectionFrame，
+                        # 不更新 Vision/C。
                         continue
 
                     except (
@@ -401,12 +354,13 @@ def run_server(
                         print()
                         print(
                             "[DISCONNECTED] "
-                            "Atlas sender closed connection."
+                            "Atlas sender closed "
+                            "connection."
                         )
 
                         print(
-                            "Waiting for reconnection; "
-                            "no empty frames are generated."
+                            "Waiting for reconnection. "
+                            "No empty frames generated."
                         )
                         print()
 
@@ -423,10 +377,15 @@ def run_server(
                         data_interrupted = False
 
                     # ==================================
-                    # JSON Lines Buffer
+                    # JSON Lines buffer
                     #
-                    # 不能假设：
-                    # 一次 recv == 一帧
+                    # 一次 recv 可能是：
+                    #
+                    # 半条 JSON
+                    # 1 条 JSON
+                    # 多条 JSON
+                    #
+                    # 所以必须按照 \n 拆包。
                     # ==================================
 
                     buffer += chunk
@@ -491,7 +450,7 @@ def run_server(
                         )
 
                         # ==================================
-                        # 状态变化时输出
+                        # 关键状态变化时打印
                         # ==================================
 
                         if (
@@ -505,8 +464,8 @@ def run_server(
                         ):
 
                             detected = [
-                                d.class_name
-                                for d
+                                obj.class_name
+                                for obj
                                 in detection_frame.detections
                             ]
 

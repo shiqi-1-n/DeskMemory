@@ -1,60 +1,14 @@
-import json
-
-from common.types import (
-    Detection,
-    DetectionFrame,
-)
-from memory.engine import DeskMemoryEngine
 from vision.pipeline import VisionPipeline
+from vision.replay_jsonl import read_jsonl
+from memory.engine import DeskMemoryEngine
 
 
 JSONL_PATH = "atlas_detections_sample.jsonl"
 
 
-def json_to_detection_frame(
-    data: dict,
-) -> DetectionFrame:
-
-    detections = []
-
-    for item in data.get("detections", []):
-
-        bbox = item["bbox_xyxy"]
-
-        detections.append(
-            Detection(
-                class_id=int(item["class_id"]),
-                class_name=str(item["class_name"]),
-                confidence=float(item["confidence"]),
-                bbox_xyxy=(
-                    float(bbox[0]),
-                    float(bbox[1]),
-                    float(bbox[2]),
-                    float(bbox[3]),
-                ),
-            )
-        )
-
-    return DetectionFrame(
-        frame_id=int(data["frame_id"]),
-        timestamp=float(data["timestamp"]),
-        image_width=int(data["image_width"]),
-        image_height=int(data["image_height"]),
-        detections=detections,
-    )
-
-
 def main():
 
-    # ==========================================
-    # B
-    # ==========================================
-
     vision = VisionPipeline()
-
-    # ==========================================
-    # C
-    # ==========================================
 
     engine = DeskMemoryEngine(
         baseline_min_hits=2,
@@ -72,94 +26,79 @@ def main():
     print("======================================")
     print()
 
-    with open(
-        JSONL_PATH,
-        "r",
-        encoding="utf-8",
-    ) as f:
+    for detection_frame in read_jsonl(
+        JSONL_PATH
+    ):
 
-        for line in f:
+        # ==================================
+        # B
+        # ==================================
 
-            line = line.strip()
+        tracked_frame = vision.update(
+            detection_frame
+        )
 
-            if not line:
-                continue
+        # ==================================
+        # C
+        # ==================================
 
-            # ==================================
-            # A JSON
-            #       ↓
-            # DetectionFrame
-            # ==================================
+        event = engine.update(
+            tracked_frame
+        )
 
-            data = json.loads(line)
+        frame_count += 1
 
-            detection_frame = (
-                json_to_detection_frame(data)
+        detected = [
+            obj.class_name
+            for obj
+            in detection_frame.detections
+        ]
+
+        tracked = [
+            (
+                obj.track_id,
+                obj.class_name,
+                obj.missed_frames,
             )
+            for obj
+            in tracked_frame.objects
+        ]
 
-            # ==================================
-            # B
-            # DetectionFrame -> TrackedFrame
-            # ==================================
+        print(
+            f"Frame "
+            f"{detection_frame.frame_id:4d} | "
+            f"Detected={detected} | "
+            f"Tracked={tracked} | "
+            f"State="
+            f"{engine.person_state.state.name}"
+        )
 
-            tracked_frame = vision.update(
-                detection_frame
-            )
+        if event is not None:
 
-            # ==================================
-            # C
-            # TrackedFrame -> ForgottenEvent
-            # ==================================
-
-            event = engine.update(
-                tracked_frame
-            )
-
-            frame_count += 1
-
-            detected = [
-                obj.class_name
-                for obj in detection_frame.detections
+            names = [
+                item.class_name
+                for item in event.items
             ]
 
-            tracked = [
-                (
-                    obj.track_id,
-                    obj.class_name,
-                    obj.missed_frames,
-                )
-                for obj in tracked_frame.objects
-            ]
-
+            print()
             print(
-                f"Frame {detection_frame.frame_id:4d} | "
-                f"Detected={detected} | "
-                f"Tracked={tracked} | "
-                f"State={engine.person_state.state.name}"
+                ">>> FORGOTTEN EVENT:",
+                names,
             )
-
-            if event is not None:
-
-                names = [
-                    item.class_name
-                    for item in event.items
-                ]
-
-                print()
-                print(
-                    ">>> FORGOTTEN EVENT:",
-                    names,
-                )
-                print()
+            print()
 
     print()
     print("======================================")
-    print(f"Replay finished: {frame_count} frames")
+    print(
+        f"Replay finished: "
+        f"{frame_count} frames"
+    )
     print("======================================")
 
     baseline = [
         obj.class_name
-        for obj in engine.baseline.objects.values()
+        for obj
+        in engine.baseline.objects.values()
     ]
 
     print(
@@ -178,7 +117,8 @@ def main():
                 obj.class_name,
                 obj.visible,
             )
-            for obj in engine.session.objects.values()
+            for obj
+            in engine.session.objects.values()
         ]
 
     print(
