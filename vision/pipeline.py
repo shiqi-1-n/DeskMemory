@@ -3,6 +3,7 @@ from __future__ import annotations
 from common.types import DetectionFrame, TrackedFrame
 from vision.stability import StabilityFilter
 from vision.tracker import SimpleTracker
+from vision.roi import DeskROIFilter
 
 
 class VisionPipeline:
@@ -25,6 +26,9 @@ class VisionPipeline:
         self.stability = StabilityFilter(
             min_observed_frames=3,
         )
+        self.roi = DeskROIFilter(
+            roi_xyxy=(0.0, 0.0, 1.0, 1.0),
+        )
 
     def update(
         self,
@@ -42,3 +46,14 @@ class VisionPipeline:
         )
 
         return stable_tracked_frame
+        stable_tracked_frame = (
+            self.stability.update(
+                raw_tracked_frame
+            )
+        )
+
+        roi_frame = self.roi.update(
+            stable_tracked_frame
+        )
+
+        return roi_frame
