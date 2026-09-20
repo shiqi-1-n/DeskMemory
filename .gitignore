@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Memory runtime logs
+logs/
+
+# Vision model files
+vision/models/*.onnx
+vision/models/*.pt
+vision/models/*.om
+
+# Vision debug media
+vision/debug/*.mp4
+vision/debug/*.avi
+vision/debug/*.jpg
+vision/debug/*.jpeg
+vision/debug/*.png
+
+# Vision replay data
+vision/debug/*.jsonl
