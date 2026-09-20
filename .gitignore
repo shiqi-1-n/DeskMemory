@@ -216,11 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-
-# Python cache
-__pycache__/
-*.pyc
-.venv/
+# Memory runtime logs
+logs/
 
 # Vision model files
 vision/models/*.onnx
